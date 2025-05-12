@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban Task Tracker with GitHub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom Styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        /* Style for the element being dragged */
+        .dragging {
+            opacity: 0.5;
+            border: 2px dashed #cbd5e1; /* gray-300 */
+        }
+        /* Style for the drop zone highlight */
+        .drag-over {
+            border: 2px dashed #3b82f6; /* blue-500 */
+            background-color: #eff6ff; /* blue-50 */
+        }
+        /* Hide scrollbar but allow scrolling */
+        .kanban-column-tasks::-webkit-scrollbar {
+            display: none; /* Safari and Chrome */
+        }
+        .kanban-column-tasks {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+            max-height: 60vh; /* Limit height and enable scroll */
+            overflow-y: auto;
+        }
+        /* Ensure buttons and inputs have consistent styling */
+        button, input[type="text"], select {
+            transition: all 0.2s ease-in-out;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        /* Add some subtle animation to task cards */
+        .task-card {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .task-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        /* Style for GitHub repo select */
+        #githubRepoSelect {
+             max-width: 200px; /* Limit width */
+             overflow: hidden;
+             text-overflow: ellipsis;
+             white-space: nowrap;
+        }
+        /* Hide elements initially */
+        .hidden-initially {
+            display: none;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Kanban Task Tracker</h1>
+
+        <div class="mb-4 text-center">
+             <button id="loadGithubBtn" class="bg-gray-700 hover:bg-gray-800 text-white font-semibold py-2 px-4 rounded-lg shadow-md text-sm">
+                 Load My GitHub Projects (MadScie254)
+             </button>
+             <p id="githubStatus" class="text-sm text-gray-500 mt-1"></p>
+        </div>
+
+        <div class="mb-6 flex flex-col sm:flex-row gap-2 justify-center items-center">
+            <input type="text" id="newTaskInput" placeholder="Enter new task..." class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm">
+            <select id="githubRepoSelect" class="p-3 border border-gray-300 rounded-lg bg-white shadow-sm hidden-initially focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="">Link GitHub Project (Optional)</option>
+                </select>
+            <button id="addTaskBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md">Add Task</button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+            <div id="todo" class="bg-white p-4 rounded-lg shadow-md kanban-column">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">To Do</h2>
+                <div class="space-y-3 min-h-[200px] kanban-column-tasks" data-column-id="todo">
+                    </div>
+            </div>
+
+            <div id="inprogress" class="bg-white p-4 rounded-lg shadow-md kanban-column">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">In Progress</h2>
+                <div class="space-y-3 min-h-[200px] kanban-column-tasks" data-column-id="inprogress">
+                    </div>
+            </div>
+
+            <div id="done" class="bg-white p-4 rounded-lg shadow-md kanban-column">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">Done</h2>
+                <div class="space-y-3 min-h-[200px] kanban-column-tasks" data-column-id="done">
+                    </div>
+            </div>
+
+        </div>
+    </div>
+
+    <canvas id="confettiCanvas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999;"></canvas>
+
+    <script>
+        // --- DOM Elements ---
+        const newTaskInput = document.getElementById('newTaskInput');
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        const columns = document.querySelectorAll('.kanban-column-tasks');
+        const confettiCanvas = document.getElementById('confettiCanvas');
+        const loadGithubBtn = document.getElementById('loadGithubBtn');
+        const githubRepoSelect = document.getElementById('githubRepoSelect');
+        const githubStatus = document.getElementById('githubStatus');
+        const confettiInstance = confetti.create(confettiCanvas, {
+            resize: true,
+            useWorker: true
+        });
+
+        // --- State ---
+        let tasks = [];
+        let draggedTask = null;
+        const GITHUB_USERNAME = "MadScie254"; // Your GitHub username
+
+        // --- Functions ---
+
+        /** Generates a unique ID for tasks. */
+        const generateId = () => `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+        /** Saves the current tasks array to local storage. */
+        const saveTasks = () => {
+            localStorage.setItem('kanbanTasks', JSON.stringify(tasks));
+        };
+
+        /** Loads tasks from local storage. */
+        const loadTasks = () => {
+            const storedTasks = localStorage.getItem('kanbanTasks');
+            if (storedTasks) {
+                tasks = JSON.parse(storedTasks);
+            } else {
+                // Default tasks if nothing is stored
+                tasks = [
+                    { id: generateId(), text: "Analyze project requirements", column: "todo" },
+                    { id: generateId(), text: "Set up development environment", column: "todo" },
+                    { id: generateId(), text: "Design UI mockups", column: "inprogress" },
+                    { id: generateId(), text: "Initial project setup", column: "done" },
+                ];
+                saveTasks(); // Save defaults if nothing was loaded
+            }
+            renderTasks();
+        };
+
+       /**
+         * Creates the HTML element for a single task.
+         * @param {object} task - The task object { id, text, column }.
+         * @returns {HTMLElement} The task card element.
+         */
+        const createTaskElement = (task) => {
+            const div = document.createElement('div');
+            div.classList.add('p-3', 'bg-gray-100', 'rounded-lg', 'shadow-sm', 'cursor-grab', 'task-card', 'relative'); // Added relative for positioning delete button
+            div.setAttribute('draggable', 'true');
+            div.setAttribute('data-task-id', task.id);
+
+            // Task Text Span (to allow delete button float)
+            const textSpan = document.createElement('span');
+            textSpan.textContent = task.text;
+            div.appendChild(textSpan);
+
+            // Add drag event listeners
+            div.addEventListener('dragstart', handleDragStart);
+            div.addEventListener('dragend', handleDragEnd);
+
+            // Add a delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.innerHTML = '&times;';
+            deleteBtn.classList.add('absolute', 'top-1', 'right-1', 'text-red-400', 'hover:text-red-600', 'font-bold', 'text-lg', 'leading-none', 'px-1', 'rounded-full');
+            deleteBtn.title = 'Delete Task';
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation(); // Prevent dragstart
+                deleteTask(task.id);
+            };
+            div.appendChild(deleteBtn);
+
+            return div;
+        };
+
+
+        /** Renders all tasks onto the board. */
+        const renderTasks = () => {
+            columns.forEach(column => {
+                column.innerHTML = ''; // Clear previous tasks
+            });
+
+            tasks.forEach(task => {
+                const columnElement = document.querySelector(`[data-column-id="${task.column}"]`);
+                if (columnElement) {
+                    const taskElement = createTaskElement(task);
+                    columnElement.appendChild(taskElement);
+                } else {
+                    console.warn(`Column element not found for column ID: ${task.column}`);
+                }
+            });
+        };
+
+        /** Adds a new task to the 'To Do' column. */
+        const addTask = () => {
+            const taskText = newTaskInput.value.trim();
+            const selectedRepo = githubRepoSelect.value; // Get selected repo name
+
+            if (taskText) {
+                let fullTaskText = taskText;
+                // Append GitHub repo info if selected
+                if (selectedRepo) {
+                    fullTaskText += ` [GitHub: ${selectedRepo}]`;
+                }
+
+                const newTask = {
+                    id: generateId(),
+                    text: fullTaskText,
+                    column: 'todo'
+                };
+                tasks.push(newTask);
+                saveTasks();
+                renderTasks();
+                newTaskInput.value = ''; // Clear input
+                githubRepoSelect.value = ''; // Reset dropdown
+            } else {
+                console.log("Task input is empty.");
+            }
+        };
+
+        /** Deletes a task by its ID. */
+        const deleteTask = (taskId) => {
+            // Find task text for confirmation message
+            const taskToDelete = tasks.find(task => task.id === taskId);
+            const taskTextPreview = taskToDelete ? `"${taskToDelete.text.substring(0, 30)}..."` : "this task";
+
+            if (confirm(`Are you sure you want to delete ${taskTextPreview}?`)) {
+                tasks = tasks.filter(task => task.id !== taskId);
+                saveTasks();
+                renderTasks();
+            }
+        };
+
+        /** Triggers the confetti animation. */
+        const triggerConfetti = () => {
+            confettiInstance({
+                particleCount: 150,
+                spread: 90,
+                origin: { y: 0.6 },
+                gravity: 0.8,
+                ticks: 300
+            });
+        };
+
+        /** Fetches public repositories from GitHub. */
+        const fetchGitHubRepos = async () => {
+            githubStatus.textContent = 'Loading projects...';
+            githubRepoSelect.innerHTML = '<option value="">Loading...</option>'; // Clear previous options
+            githubRepoSelect.disabled = true;
+            loadGithubBtn.disabled = true; // Disable button while loading
+
+            try {
+                const response = await fetch(`https://api.github.com/users/${GITHUB_USERNAME}/repos?sort=updated&per_page=100`); // Fetch up to 100 repos sorted by update time
+                if (!response.ok) {
+                    // Handle API errors (like rate limiting)
+                    throw new Error(`GitHub API Error: ${response.status} ${response.statusText}`);
+                }
+                const repos = await response.json();
+
+                // Clear loading message and populate dropdown
+                githubRepoSelect.innerHTML = '<option value="">Link GitHub Project (Optional)</option>'; // Reset default option
+                if (repos && repos.length > 0) {
+                    repos.forEach(repo => {
+                        const option = document.createElement('option');
+                        option.value = repo.name;
+                        option.textContent = repo.name;
+                        githubRepoSelect.appendChild(option);
+                    });
+                    githubRepoSelect.classList.remove('hidden-initially'); // Show the dropdown
+                    githubRepoSelect.disabled = false;
+                    githubStatus.textContent = `Loaded ${repos.length} public projects.`;
+                } else {
+                    githubStatus.textContent = 'No public projects found.';
+                }
+
+            } catch (error) {
+                console.error("Failed to fetch GitHub repos:", error);
+                githubStatus.textContent = 'Error loading projects. Check console.';
+                 githubRepoSelect.innerHTML = '<option value="">Error loading</option>'; // Show error in dropdown
+                 // Don't show dropdown if error occurred
+                 githubRepoSelect.classList.add('hidden-initially');
+            } finally {
+                 loadGithubBtn.disabled = false; // Re-enable button
+            }
+        };
+
+
+        // --- Drag and Drop Event Handlers ---
+
+        const handleDragStart = (e) => {
+            draggedTask = e.target;
+            e.dataTransfer.setData('text/plain', draggedTask.dataset.taskId);
+            setTimeout(() => {
+                draggedTask.classList.add('dragging');
+            }, 0);
+        };
+
+        const handleDragEnd = (e) => {
+            if (draggedTask) {
+                draggedTask.classList.remove('dragging');
+            }
+            draggedTask = null;
+            columns.forEach(col => col.classList.remove('drag-over'));
+        };
+
+        const handleDragOver = (e) => {
+            e.preventDefault();
+            const targetColumn = e.target.closest('.kanban-column-tasks');
+            if (targetColumn) {
+                columns.forEach(col => {
+                    if (col !== targetColumn) {
+                        col.classList.remove('drag-over');
+                    }
+                });
+                targetColumn.classList.add('drag-over');
+            }
+        };
+
+         const handleDragLeave = (e) => {
+            // Check if the element being left is actually the column tasks container
+            // This prevents flickering when moving over child elements (task cards)
+            if (e.target.classList.contains('kanban-column-tasks')) {
+                 e.target.classList.remove('drag-over');
+            }
+         };
+
+
+        const handleDrop = (e) => {
+            e.preventDefault();
+            const targetColumnElement = e.target.closest('.kanban-column-tasks');
+            if (!targetColumnElement || !draggedTask) return;
+
+            targetColumnElement.classList.remove('drag-over');
+
+            const taskId = e.dataTransfer.getData('text/plain');
+            const targetColumnId = targetColumnElement.dataset.columnId;
+
+            const taskIndex = tasks.findIndex(task => task.id === taskId);
+            if (taskIndex > -1) {
+                const previousColumnId = tasks[taskIndex].column;
+                tasks[taskIndex].column = targetColumnId;
+
+                if (targetColumnId === 'done' && previousColumnId !== 'done') {
+                    triggerConfetti();
+                }
+
+                saveTasks();
+                renderTasks();
+            } else {
+                console.error("Dropped task not found in tasks array:", taskId);
+            }
+        };
+
+        // --- Event Listeners ---
+
+        addTaskBtn.addEventListener('click', addTask);
+        newTaskInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addTask();
+            }
+        });
+
+        // Listener for the GitHub load button
+        loadGithubBtn.addEventListener('click', fetchGitHubRepos);
+
+        columns.forEach(column => {
+            column.addEventListener('dragover', handleDragOver);
+            column.addEventListener('dragleave', handleDragLeave);
+            column.addEventListener('drop', handleDrop);
+        });
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', loadTasks);
+
+    </script>
+
+</body>
+</html>
