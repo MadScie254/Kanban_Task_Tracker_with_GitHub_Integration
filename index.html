@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kanban Task Tracker with GitHub</title>
+    <title>Enhanced Kanban Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,93 +13,285 @@
         /* Custom Styles */
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6; /* Light gray background */
+            background-color: #e5e7eb; /* Slightly darker gray background */
+            overflow-x: hidden; /* Prevent horizontal scroll */
+            position: relative; /* Needed for particle canvas positioning */
         }
-        /* Style for the element being dragged */
-        .dragging {
-            opacity: 0.5;
-            border: 2px dashed #cbd5e1; /* gray-300 */
+
+        /* Background Particle Canvas */
+        #particleCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1; /* Place behind everything */
+            pointer-events: none;
         }
-        /* Style for the drop zone highlight */
-        .drag-over {
-            border: 2px dashed #3b82f6; /* blue-500 */
-            background-color: #eff6ff; /* blue-50 */
+
+        /* Column Styling */
+        .kanban-column {
+            border-radius: 0.75rem; /* lg */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* md */
+            transition: box-shadow 0.3s ease-in-out;
         }
-        /* Hide scrollbar but allow scrolling */
-        .kanban-column-tasks::-webkit-scrollbar {
-            display: none; /* Safari and Chrome */
+        .kanban-column:hover {
+             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* lg */
         }
-        .kanban-column-tasks {
-            -ms-overflow-style: none;  /* IE and Edge */
-            scrollbar-width: none;  /* Firefox */
-            max-height: 60vh; /* Limit height and enable scroll */
-            overflow-y: auto;
+        #todo { background-color: #eff6ff; } /* blue-50 */
+        #inprogress { background-color: #fefce8; } /* yellow-50 */
+        #done { background-color: #f0fdf4; } /* green-50 */
+
+        .kanban-column-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between; /* Align title and button */
+            padding-bottom: 0.5rem; /* pb-2 */
+            border-bottom: 1px solid #d1d5db; /* border-gray-300 */
+            margin-bottom: 1rem; /* mb-4 */
         }
-        /* Ensure buttons and inputs have consistent styling */
-        button, input[type="text"], select {
-            transition: all 0.2s ease-in-out;
+        .kanban-column-header h2 {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem; /* space between icon and text */
+            font-size: 1.125rem; /* xl */
+            font-weight: 600; /* semibold */
+            color: #374151; /* gray-700 */
         }
-        button:hover {
-            opacity: 0.9;
+        .kanban-column-header svg {
+            width: 1.25rem; /* w-5 */
+            height: 1.25rem; /* h-5 */
+            color: #4b5563; /* gray-600 */
         }
-        /* Add some subtle animation to task cards */
+
+        /* Task Card Styling */
         .task-card {
-            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            background-color: #ffffff; /* white */
+            border: 1px solid #e5e7eb; /* border-gray-200 */
+            border-radius: 0.5rem; /* lg */
+            padding: 0.75rem; /* p-3 */
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* sm */
+            cursor: grab;
+            position: relative;
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out, opacity 0.3s ease-in-out;
+            word-wrap: break-word; /* Ensure long text wraps */
+            overflow: hidden; /* Hide overflow during edit */
         }
         .task-card:hover {
-            transform: translateY(-2px);
+            transform: translateY(-3px);
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }
-        /* Style for GitHub repo select */
-        #githubRepoSelect {
-             max-width: 200px; /* Limit width */
-             overflow: hidden;
-             text-overflow: ellipsis;
-             white-space: nowrap;
+        .task-card.dragging {
+            opacity: 0.4;
+            border: 2px dashed #9ca3af; /* gray-400 */
+            transform: rotate(3deg); /* Slight tilt when dragging */
         }
-        /* Hide elements initially */
-        .hidden-initially {
-            display: none;
+        .task-card .task-text {
+             display: block; /* Ensure it takes full width */
+             padding-right: 2rem; /* Space for delete button */
         }
+        .task-card .github-link {
+            font-size: 0.8rem; /* Smaller text */
+            color: #4f46e5; /* indigo-600 */
+            text-decoration: none;
+            margin-left: 0.25rem;
+            font-weight: 500;
+        }
+        .task-card .github-link:hover {
+            text-decoration: underline;
+        }
+        .task-card .delete-btn {
+            position: absolute;
+            top: 0.4rem;
+            right: 0.4rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0.2rem;
+            border-radius: 9999px; /* full */
+            transition: background-color 0.2s ease;
+        }
+         .task-card .delete-btn:hover {
+             background-color: #fee2e2; /* red-100 */
+         }
+        .task-card .delete-btn svg {
+            width: 1rem; /* w-4 */
+            height: 1rem; /* h-4 */
+            color: #ef4444; /* red-500 */
+        }
+         .task-card .delete-btn:hover svg {
+             color: #dc2626; /* red-600 */
+         }
+
+        /* In-place Edit Input */
+        .edit-input {
+            width: calc(100% - 2rem); /* Adjust width to prevent overlap with potential delete button */
+            padding: 0.5rem;
+            border: 1px solid #3b82f6; /* blue-500 */
+            border-radius: 0.375rem; /* md */
+            font-family: inherit;
+            font-size: inherit;
+            box-sizing: border-box; /* Include padding and border in width */
+            margin: 0; /* Reset margin */
+        }
+
+
+        /* Drag & Drop Styles */
+        .kanban-column-tasks {
+            min-height: 200px;
+            padding: 0.25rem; /* Add some padding for drop zone */
+            border-radius: 0.5rem; /* lg */
+            transition: background-color 0.3s ease-in-out, border 0.3s ease-in-out;
+            /* Hide scrollbar but allow scrolling */
+            max-height: 55vh;
+            overflow-y: auto;
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        .kanban-column-tasks::-webkit-scrollbar { display: none; } /* Safari and Chrome */
+
+        .kanban-column-tasks.drag-over {
+            border: 2px dashed #2563eb; /* blue-600 */
+            background-color: #dbeafe; /* blue-100 */
+        }
+        .drag-placeholder { /* Placeholder for reordering */
+            height: 50px; /* Match typical task height */
+            background-color: rgba(100, 116, 139, 0.1); /* slate-400/10 */
+            border: 2px dashed #94a3b8; /* slate-400 */
+            border-radius: 0.5rem; /* lg */
+            margin: 0.75rem 0; /* my-3 */
+        }
+
+
+        /* Animation Classes */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; transform: scale(0.9); } }
+
+        .task-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        .task-fade-out { animation: fadeOut 0.3s ease-in forwards; }
+
+        /* Loading Spinner */
+        .spinner {
+            display: inline-block;
+            border: 3px solid rgba(255, 255, 255, 0.3); /* Light border */
+            border-radius: 50%;
+            border-top-color: #ffffff; /* White */
+            width: 1rem; /* w-4 */
+            height: 1rem; /* h-4 */
+            animation: spin 1s ease-infinite;
+            margin-left: 0.5rem; /* ml-2 */
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .hidden { display: none; }
+
+        /* Utility */
+        .cursor-pointer { cursor: pointer; }
+        .hidden-initially { display: none; }
+
+        /* Search Input */
+        #searchInput {
+            padding: 0.75rem; /* p-3 */
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            border-radius: 0.5rem; /* lg */
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* sm */
+            width: 100%;
+            max-width: 400px; /* Limit width */
+            margin-bottom: 1.5rem; /* mb-6 */
+        }
+         #searchInput:focus {
+            outline: none;
+            border-color: #2563eb; /* blue-600 */
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4); /* Ring effect */
+         }
+
+         /* Clear Done Button */
+         .clear-done-btn {
+            background: none;
+            border: none;
+            color: #ef4444; /* red-500 */
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem; /* md */
+            transition: background-color 0.2s ease, color 0.2s ease;
+         }
+         .clear-done-btn:hover {
+            background-color: #fee2e2; /* red-100 */
+            color: #dc2626; /* red-600 */
+         }
+         .clear-done-btn svg {
+             display: inline-block;
+             width: 0.875rem; /* w-3.5 */
+             height: 0.875rem; /* h-3.5 */
+             margin-right: 0.25rem;
+             vertical-align: text-bottom;
+         }
+
     </style>
 </head>
 <body class="p-4 md:p-8">
+    <canvas id="particleCanvas"></canvas>
 
-    <div class="max-w-6xl mx-auto">
-        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Kanban Task Tracker</h1>
+    <div class="max-w-7xl mx-auto relative z-10"> <h1 class="text-3xl md:text-4xl font-bold text-center mb-6 text-gray-800">Enhanced Kanban Tracker</h1>
+
+        <div class="flex justify-center mb-6">
+             <input type="text" id="searchInput" placeholder="Search tasks..." class="focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+
 
         <div class="mb-4 text-center">
-             <button id="loadGithubBtn" class="bg-gray-700 hover:bg-gray-800 text-white font-semibold py-2 px-4 rounded-lg shadow-md text-sm">
-                 Load My GitHub Projects (MadScie254)
+             <button id="loadGithubBtn" class="bg-gray-700 hover:bg-gray-800 text-white font-semibold py-2 px-4 rounded-lg shadow-md text-sm inline-flex items-center">
+                 <span id="loadGithubBtnText">Load My GitHub Projects (MadScie254)</span>
+                 <span id="githubSpinner" class="spinner hidden"></span>
              </button>
              <p id="githubStatus" class="text-sm text-gray-500 mt-1"></p>
         </div>
 
-        <div class="mb-6 flex flex-col sm:flex-row gap-2 justify-center items-center">
-            <input type="text" id="newTaskInput" placeholder="Enter new task..." class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm">
+        <div class="mb-8 flex flex-col sm:flex-row gap-3 justify-center items-center">
+            <input type="text" id="newTaskInput" placeholder="Enter new task description..." class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm">
             <select id="githubRepoSelect" class="p-3 border border-gray-300 rounded-lg bg-white shadow-sm hidden-initially focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="">Link GitHub Project (Optional)</option>
                 </select>
-            <button id="addTaskBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md">Add Task</button>
+            <button id="addTaskBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md whitespace-nowrap">Add Task</button>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 
-            <div id="todo" class="bg-white p-4 rounded-lg shadow-md kanban-column">
-                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">To Do</h2>
-                <div class="space-y-3 min-h-[200px] kanban-column-tasks" data-column-id="todo">
+            <div id="todo-col" class="bg-white p-4 kanban-column">
+                <div class="kanban-column-header">
+                    <h2>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h7.5M8.25 12h7.5m-7.5 5.25h7.5M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" /></svg>
+                        To Do
+                    </h2>
+                </div>
+                <div class="space-y-3 kanban-column-tasks" data-column-id="todo">
                     </div>
             </div>
 
-            <div id="inprogress" class="bg-white p-4 rounded-lg shadow-md kanban-column">
-                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">In Progress</h2>
-                <div class="space-y-3 min-h-[200px] kanban-column-tasks" data-column-id="inprogress">
+            <div id="inprogress-col" class="bg-white p-4 kanban-column">
+                 <div class="kanban-column-header">
+                    <h2>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                        In Progress
+                    </h2>
+                 </div>
+                <div class="space-y-3 kanban-column-tasks" data-column-id="inprogress">
                     </div>
             </div>
 
-            <div id="done" class="bg-white p-4 rounded-lg shadow-md kanban-column">
-                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">Done</h2>
-                <div class="space-y-3 min-h-[200px] kanban-column-tasks" data-column-id="done">
+            <div id="done-col" class="bg-white p-4 kanban-column">
+                 <div class="kanban-column-header">
+                    <h2>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                        Done
+                    </h2>
+                    <button id="clearDoneBtn" class="clear-done-btn" title="Clear all completed tasks">
+                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                         Clear Done
+                    </button>
+                 </div>
+                <div class="space-y-3 kanban-column-tasks" data-column-id="done">
                     </div>
             </div>
 
@@ -115,8 +307,15 @@
         const columns = document.querySelectorAll('.kanban-column-tasks');
         const confettiCanvas = document.getElementById('confettiCanvas');
         const loadGithubBtn = document.getElementById('loadGithubBtn');
+        const loadGithubBtnText = document.getElementById('loadGithubBtnText');
+        const githubSpinner = document.getElementById('githubSpinner');
         const githubRepoSelect = document.getElementById('githubRepoSelect');
         const githubStatus = document.getElementById('githubStatus');
+        const searchInput = document.getElementById('searchInput');
+        const clearDoneBtn = document.getElementById('clearDoneBtn');
+        const particleCanvas = document.getElementById('particleCanvas'); // Particle canvas
+        const particleCtx = particleCanvas.getContext('2d'); // Particle context
+
         const confettiInstance = confetti.create(confettiCanvas, {
             resize: true,
             useWorker: true
@@ -124,8 +323,14 @@
 
         // --- State ---
         let tasks = [];
-        let draggedTask = null;
-        const GITHUB_USERNAME = "MadScie254"; // Your GitHub username
+        let draggedTaskElement = null; // The HTML element being dragged
+        let dragPlaceholder = null; // Placeholder for reordering
+
+        const GITHUB_USERNAME = "MadScie254";
+
+        // --- Particle Animation State ---
+        let particles = [];
+        const particleCount = 50; // Number of background particles
 
         // --- Functions ---
 
@@ -145,61 +350,173 @@
             } else {
                 // Default tasks if nothing is stored
                 tasks = [
-                    { id: generateId(), text: "Analyze project requirements", column: "todo" },
-                    { id: generateId(), text: "Set up development environment", column: "todo" },
-                    { id: generateId(), text: "Design UI mockups", column: "inprogress" },
-                    { id: generateId(), text: "Initial project setup", column: "done" },
+                    { id: generateId(), text: "Double-click me to edit!", column: "todo" },
+                    { id: generateId(), text: "Drag me to 'In Progress'", column: "todo" },
+                    { id: generateId(), text: "Fetch GitHub repos [GitHub: kanban_confetti_app_v1]", column: "inprogress" },
+                    { id: generateId(), text: "Celebrate task completion!", column: "done" },
                 ];
-                saveTasks(); // Save defaults if nothing was loaded
+                saveTasks();
             }
-            renderTasks();
+            renderTasks(); // Initial render
         };
 
-       /**
-         * Creates the HTML element for a single task.
+        /**
+         * Creates the HTML element for a single task, including edit and GitHub link functionality.
          * @param {object} task - The task object { id, text, column }.
          * @returns {HTMLElement} The task card element.
          */
         const createTaskElement = (task) => {
             const div = document.createElement('div');
-            div.classList.add('p-3', 'bg-gray-100', 'rounded-lg', 'shadow-sm', 'cursor-grab', 'task-card', 'relative'); // Added relative for positioning delete button
+            div.classList.add('task-card');
             div.setAttribute('draggable', 'true');
             div.setAttribute('data-task-id', task.id);
 
-            // Task Text Span (to allow delete button float)
+            // Task Text Span (handles display and editing trigger)
             const textSpan = document.createElement('span');
-            textSpan.textContent = task.text;
+            textSpan.classList.add('task-text', 'cursor-pointer'); // Make text clickable for edit
+            textSpan.title = 'Double-click to edit';
+
+            // Check for GitHub link pattern and create link
+            const githubMatch = task.text.match(/\[GitHub:\s*([^\]]+)\]/);
+            if (githubMatch) {
+                const repoName = githubMatch[1].trim();
+                const linkText = task.text.replace(githubMatch[0], '').trim(); // Text before link
+                textSpan.textContent = linkText + ' '; // Add space before link
+
+                const githubLink = document.createElement('a');
+                githubLink.href = `https://github.com/${GITHUB_USERNAME}/${repoName}`;
+                githubLink.textContent = `[${repoName}]`;
+                githubLink.classList.add('github-link');
+                githubLink.target = '_blank'; // Open in new tab
+                githubLink.rel = 'noopener noreferrer';
+                githubLink.onclick = (e) => e.stopPropagation(); // Prevent edit trigger when clicking link
+                textSpan.appendChild(githubLink);
+            } else {
+                textSpan.textContent = task.text; // No link found
+            }
+
             div.appendChild(textSpan);
 
-            // Add drag event listeners
+            // Double-click listener for editing
+            textSpan.addEventListener('dblclick', (e) => {
+                e.stopPropagation(); // Prevent drag start
+                enableEditing(textSpan, task);
+            });
+
+            // Drag event listeners
             div.addEventListener('dragstart', handleDragStart);
             div.addEventListener('dragend', handleDragEnd);
 
-            // Add a delete button
+            // Delete button with SVG icon
             const deleteBtn = document.createElement('button');
-            deleteBtn.innerHTML = '&times;';
-            deleteBtn.classList.add('absolute', 'top-1', 'right-1', 'text-red-400', 'hover:text-red-600', 'font-bold', 'text-lg', 'leading-none', 'px-1', 'rounded-full');
+            deleteBtn.classList.add('delete-btn');
             deleteBtn.title = 'Delete Task';
+            deleteBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>`;
             deleteBtn.onclick = (e) => {
-                e.stopPropagation(); // Prevent dragstart
-                deleteTask(task.id);
+                e.stopPropagation();
+                deleteTask(task.id, div); // Pass the element for animation
             };
             div.appendChild(deleteBtn);
 
             return div;
         };
 
+        /**
+         * Enables in-place editing for a task.
+         * @param {HTMLElement} textSpan - The span element containing the task text.
+         * @param {object} task - The task object.
+         */
+        const enableEditing = (textSpan, task) => {
+            const currentText = tasks.find(t => t.id === task.id)?.text || ''; // Get original text from state
+            const taskCard = textSpan.closest('.task-card');
+            taskCard.setAttribute('draggable', 'false'); // Disable dragging while editing
 
-        /** Renders all tasks onto the board. */
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentText; // Use full original text
+            input.classList.add('edit-input');
+
+            // Replace span with input
+            textSpan.style.display = 'none'; // Hide span
+            taskCard.insertBefore(input, textSpan); // Insert input before span
+            input.focus(); // Focus the input field
+            input.select(); // Select text
+
+            // Save handler
+            const saveEdit = () => {
+                const newText = input.value.trim();
+                if (newText && newText !== currentText) {
+                    task.text = newText; // Update task object in state array
+                    saveTasks();
+                    // Update the textSpan content (important for re-rendering links etc.)
+                    const githubMatch = newText.match(/\[GitHub:\s*([^\]]+)\]/);
+                     textSpan.innerHTML = ''; // Clear previous content
+                     if (githubMatch) {
+                         const repoName = githubMatch[1].trim();
+                         const linkText = newText.replace(githubMatch[0], '').trim();
+                         textSpan.textContent = linkText + ' ';
+                         const githubLink = document.createElement('a');
+                         githubLink.href = `https://github.com/${GITHUB_USERNAME}/${repoName}`;
+                         githubLink.textContent = `[${repoName}]`;
+                         githubLink.classList.add('github-link');
+                         githubLink.target = '_blank';
+                         githubLink.rel = 'noopener noreferrer';
+                         githubLink.onclick = (e) => e.stopPropagation();
+                         textSpan.appendChild(githubLink);
+                     } else {
+                         textSpan.textContent = newText;
+                     }
+
+                }
+                 // Restore display
+                 input.remove();
+                 textSpan.style.display = 'block';
+                 taskCard.setAttribute('draggable', 'true'); // Re-enable dragging
+            };
+
+            // Event listeners for saving
+            input.addEventListener('blur', saveEdit);
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    input.blur(); // Trigger save on Enter
+                } else if (e.key === 'Escape') {
+                    // Cancel edit
+                    input.remove();
+                    textSpan.style.display = 'block';
+                    taskCard.setAttribute('draggable', 'true');
+                }
+            });
+        };
+
+        /**
+         * Renders tasks onto the board, applying search filter if active.
+         */
         const renderTasks = () => {
+            const searchTerm = searchInput.value.toLowerCase();
+
+            // Clear existing tasks from columns
             columns.forEach(column => {
-                column.innerHTML = ''; // Clear previous tasks
+                column.innerHTML = '';
             });
 
-            tasks.forEach(task => {
+            // Filter tasks based on search term
+            const filteredTasks = tasks.filter(task =>
+                task.text.toLowerCase().includes(searchTerm)
+            );
+
+            // Add filtered tasks to their correct columns
+            filteredTasks.forEach(task => {
                 const columnElement = document.querySelector(`[data-column-id="${task.column}"]`);
                 if (columnElement) {
                     const taskElement = createTaskElement(task);
+                    // Check if this task was just added (for animation)
+                    if (task.justAdded) {
+                        taskElement.classList.add('task-fade-in');
+                        delete task.justAdded; // Remove flag after applying animation
+                    }
                     columnElement.appendChild(taskElement);
                 } else {
                     console.warn(`Column element not found for column ID: ${task.column}`);
@@ -207,14 +524,13 @@
             });
         };
 
-        /** Adds a new task to the 'To Do' column. */
+        /** Adds a new task to the 'To Do' column with animation. */
         const addTask = () => {
             const taskText = newTaskInput.value.trim();
-            const selectedRepo = githubRepoSelect.value; // Get selected repo name
+            const selectedRepo = githubRepoSelect.value;
 
             if (taskText) {
                 let fullTaskText = taskText;
-                // Append GitHub repo info if selected
                 if (selectedRepo) {
                     fullTaskText += ` [GitHub: ${selectedRepo}]`;
                 }
@@ -222,59 +538,84 @@
                 const newTask = {
                     id: generateId(),
                     text: fullTaskText,
-                    column: 'todo'
+                    column: 'todo',
+                    justAdded: true // Flag for animation
                 };
                 tasks.push(newTask);
                 saveTasks();
-                renderTasks();
-                newTaskInput.value = ''; // Clear input
-                githubRepoSelect.value = ''; // Reset dropdown
+                renderTasks(); // Re-render to show the new task with animation
+                newTaskInput.value = '';
+                githubRepoSelect.value = '';
             } else {
                 console.log("Task input is empty.");
+                // Optionally show a user-friendly message here
             }
         };
 
-        /** Deletes a task by its ID. */
-        const deleteTask = (taskId) => {
-            // Find task text for confirmation message
+        /** Deletes a task by its ID with animation. */
+        const deleteTask = (taskId, taskElement) => {
             const taskToDelete = tasks.find(task => task.id === taskId);
             const taskTextPreview = taskToDelete ? `"${taskToDelete.text.substring(0, 30)}..."` : "this task";
 
             if (confirm(`Are you sure you want to delete ${taskTextPreview}?`)) {
-                tasks = tasks.filter(task => task.id !== taskId);
-                saveTasks();
-                renderTasks();
+                // Add fade-out animation
+                taskElement.classList.add('task-fade-out');
+
+                // Wait for animation to finish before removing from DOM and state
+                taskElement.addEventListener('animationend', () => {
+                    tasks = tasks.filter(task => task.id !== taskId);
+                    saveTasks();
+                    taskElement.remove(); // Remove element after animation
+                    // No need to call renderTasks() here as we only removed one element
+                }, { once: true }); // Ensure listener runs only once
             }
         };
+
+        /** Clears all tasks from the 'Done' column. */
+        const clearDoneTasks = () => {
+            const doneTasks = tasks.filter(task => task.column === 'done');
+            if (doneTasks.length === 0) {
+                alert("No tasks in the 'Done' column to clear.");
+                return;
+            }
+
+            if (confirm(`Are you sure you want to clear ${doneTasks.length} completed task(s)?`)) {
+                tasks = tasks.filter(task => task.column !== 'done');
+                saveTasks();
+                renderTasks(); // Re-render the board
+            }
+        };
+
 
         /** Triggers the confetti animation. */
         const triggerConfetti = () => {
             confettiInstance({
-                particleCount: 150,
-                spread: 90,
+                particleCount: 180, // More confetti!
+                spread: 100,
                 origin: { y: 0.6 },
-                gravity: 0.8,
-                ticks: 300
+                gravity: 0.7,
+                ticks: 350,
+                colors: ['#2563eb', '#facc15', '#4ade80', '#fb923c', '#f472b6'] // Custom colors
             });
         };
 
-        /** Fetches public repositories from GitHub. */
+        /** Fetches public repositories from GitHub with loading indicator. */
         const fetchGitHubRepos = async () => {
-            githubStatus.textContent = 'Loading projects...';
-            githubRepoSelect.innerHTML = '<option value="">Loading...</option>'; // Clear previous options
+            githubStatus.textContent = ''; // Clear previous status
+            loadGithubBtnText.textContent = 'Loading...';
+            githubSpinner.classList.remove('hidden'); // Show spinner
+            githubRepoSelect.innerHTML = '<option value="">Loading...</option>';
             githubRepoSelect.disabled = true;
-            loadGithubBtn.disabled = true; // Disable button while loading
+            loadGithubBtn.disabled = true;
 
             try {
-                const response = await fetch(`https://api.github.com/users/${GITHUB_USERNAME}/repos?sort=updated&per_page=100`); // Fetch up to 100 repos sorted by update time
+                const response = await fetch(`https://api.github.com/users/${GITHUB_USERNAME}/repos?sort=updated&per_page=100`);
                 if (!response.ok) {
-                    // Handle API errors (like rate limiting)
                     throw new Error(`GitHub API Error: ${response.status} ${response.statusText}`);
                 }
                 const repos = await response.json();
 
-                // Clear loading message and populate dropdown
-                githubRepoSelect.innerHTML = '<option value="">Link GitHub Project (Optional)</option>'; // Reset default option
+                githubRepoSelect.innerHTML = '<option value="">Link GitHub Project (Optional)</option>';
                 if (repos && repos.length > 0) {
                     repos.forEach(repo => {
                         const option = document.createElement('option');
@@ -282,90 +623,251 @@
                         option.textContent = repo.name;
                         githubRepoSelect.appendChild(option);
                     });
-                    githubRepoSelect.classList.remove('hidden-initially'); // Show the dropdown
+                    githubRepoSelect.classList.remove('hidden-initially');
                     githubRepoSelect.disabled = false;
                     githubStatus.textContent = `Loaded ${repos.length} public projects.`;
                 } else {
                     githubStatus.textContent = 'No public projects found.';
+                    githubRepoSelect.classList.add('hidden-initially'); // Hide if no repos
                 }
 
             } catch (error) {
                 console.error("Failed to fetch GitHub repos:", error);
                 githubStatus.textContent = 'Error loading projects. Check console.';
-                 githubRepoSelect.innerHTML = '<option value="">Error loading</option>'; // Show error in dropdown
-                 // Don't show dropdown if error occurred
-                 githubRepoSelect.classList.add('hidden-initially');
+                githubRepoSelect.innerHTML = '<option value="">Error loading</option>';
+                githubRepoSelect.classList.add('hidden-initially');
             } finally {
-                 loadGithubBtn.disabled = false; // Re-enable button
+                loadGithubBtnText.textContent = `Load My GitHub Projects (${GITHUB_USERNAME})`; // Restore text
+                githubSpinner.classList.add('hidden'); // Hide spinner
+                loadGithubBtn.disabled = false;
             }
         };
 
 
-        // --- Drag and Drop Event Handlers ---
+        // --- Drag and Drop Event Handlers (Enhanced for Reordering) ---
 
         const handleDragStart = (e) => {
-            draggedTask = e.target;
-            e.dataTransfer.setData('text/plain', draggedTask.dataset.taskId);
+            // Don't start drag if editing
+            if (e.target.querySelector('.edit-input')) {
+                e.preventDefault();
+                return;
+            }
+            draggedTaskElement = e.target; // The card element being dragged
+            e.dataTransfer.setData('text/plain', draggedTaskElement.dataset.taskId);
+            e.dataTransfer.effectAllowed = 'move'; // Indicate moving is allowed
+
+            // Use timeout to allow the browser to render the drag image before applying style
             setTimeout(() => {
-                draggedTask.classList.add('dragging');
+                draggedTaskElement.classList.add('dragging');
             }, 0);
+
+            // Create placeholder immediately for smoother visual feedback
+            createDragPlaceholder();
         };
 
         const handleDragEnd = (e) => {
-            if (draggedTask) {
-                draggedTask.classList.remove('dragging');
+            if (draggedTaskElement) {
+                draggedTaskElement.classList.remove('dragging');
             }
-            draggedTask = null;
+            removeDragPlaceholder(); // Clean up placeholder
+            draggedTaskElement = null;
+            // Remove any lingering drag-over styles
             columns.forEach(col => col.classList.remove('drag-over'));
         };
 
         const handleDragOver = (e) => {
-            e.preventDefault();
+            e.preventDefault(); // Necessary to allow dropping
+            e.dataTransfer.dropEffect = 'move'; // Visual cue for moving
+
             const targetColumn = e.target.closest('.kanban-column-tasks');
-            if (targetColumn) {
-                columns.forEach(col => {
-                    if (col !== targetColumn) {
-                        col.classList.remove('drag-over');
-                    }
-                });
-                targetColumn.classList.add('drag-over');
+            if (!targetColumn || !draggedTaskElement) return;
+
+            // Highlight the column being dragged over
+            if (!targetColumn.classList.contains('drag-over')) {
+                 columns.forEach(col => col.classList.remove('drag-over')); // Remove from others
+                 targetColumn.classList.add('drag-over');
+            }
+
+            // --- Reordering Logic ---
+            // Find the task card being hovered over (if any)
+            const afterElement = getDragAfterElement(targetColumn, e.clientY);
+
+            // Move the placeholder
+            if (afterElement == null) { // If dragging to the end of the list
+                targetColumn.appendChild(dragPlaceholder);
+            } else { // If dragging between other tasks
+                targetColumn.insertBefore(dragPlaceholder, afterElement);
             }
         };
 
-         const handleDragLeave = (e) => {
-            // Check if the element being left is actually the column tasks container
-            // This prevents flickering when moving over child elements (task cards)
-            if (e.target.classList.contains('kanban-column-tasks')) {
-                 e.target.classList.remove('drag-over');
-            }
-         };
+        /** Determines which element the dragged task should be placed before. */
+        const getDragAfterElement = (container, y) => {
+            const draggableElements = [...container.querySelectorAll('.task-card:not(.dragging):not(.drag-placeholder)')]; // Get non-dragging cards
 
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2; // Distance from center of child
+                // If offset is negative (cursor is above center) and closer than previous closest
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element; // Start with worst possible offset
+        };
+
+        /** Creates the visual placeholder element. */
+        const createDragPlaceholder = () => {
+            if (!dragPlaceholder) {
+                dragPlaceholder = document.createElement('div');
+                dragPlaceholder.classList.add('drag-placeholder');
+                // Match height of the dragged element for better visual
+                if(draggedTaskElement) {
+                    dragPlaceholder.style.height = `${draggedTaskElement.offsetHeight}px`;
+                }
+            }
+        };
+
+        /** Removes the visual placeholder element. */
+        const removeDragPlaceholder = () => {
+            if (dragPlaceholder && dragPlaceholder.parentNode) {
+                dragPlaceholder.parentNode.removeChild(dragPlaceholder);
+            }
+            dragPlaceholder = null; // Reset reference
+        };
+
+
+        const handleDragLeave = (e) => {
+            // Only remove highlight if leaving the column container itself, not its children
+             if (e.target.classList.contains('kanban-column-tasks')) {
+                 e.target.classList.remove('drag-over');
+             }
+        };
 
         const handleDrop = (e) => {
             e.preventDefault();
             const targetColumnElement = e.target.closest('.kanban-column-tasks');
-            if (!targetColumnElement || !draggedTask) return;
+            if (!targetColumnElement || !draggedTaskElement) {
+                 handleDragEnd(e); // Clean up if drop is invalid
+                 return;
+            }
 
-            targetColumnElement.classList.remove('drag-over');
+            targetColumnElement.classList.remove('drag-over'); // Remove highlight
+            removeDragPlaceholder(); // Remove placeholder on successful drop
 
             const taskId = e.dataTransfer.getData('text/plain');
             const targetColumnId = targetColumnElement.dataset.columnId;
-
             const taskIndex = tasks.findIndex(task => task.id === taskId);
-            if (taskIndex > -1) {
-                const previousColumnId = tasks[taskIndex].column;
-                tasks[taskIndex].column = targetColumnId;
 
+            if (taskIndex > -1) {
+                const task = tasks[taskIndex];
+                const previousColumnId = task.column;
+
+                // --- Update Task State ---
+                // 1. Update column if moved to a different column
+                task.column = targetColumnId;
+
+                // 2. Reorder tasks array based on drop position
+                const tasksInTargetColumn = tasks.filter(t => t.column === targetColumnId && t.id !== taskId); // Exclude the dropped task itself for now
+                const droppedElementIndex = Array.from(targetColumnElement.children).indexOf(draggedTaskElement); // Find where it *would* be inserted visually
+
+                // Calculate the new index in the main `tasks` array
+                let newIndex = tasks.length; // Default to end
+                if (droppedElementIndex !== -1) {
+                     // Find the ID of the element *after* the drop position in the DOM
+                     const elementAfterDrop = targetColumnElement.children[droppedElementIndex];
+                     const idAfterDrop = elementAfterDrop ? elementAfterDrop.dataset.taskId : null;
+
+                     if (idAfterDrop) {
+                         // Find the index of that element in the *original* tasks array
+                         const indexAfterDrop = tasks.findIndex(t => t.id === idAfterDrop);
+                         if (indexAfterDrop !== -1) {
+                             newIndex = indexAfterDrop;
+                         }
+                     } else {
+                          // If dropped at the end of the column, find the index of the last task of that column
+                          const lastTaskInColIndex = tasks.map(t => t.id).lastIndexOf(tasksInTargetColumn[tasksInTargetColumn.length - 1]?.id);
+                          if(lastTaskInColIndex !== -1) newIndex = lastTaskInColIndex + 1;
+                          else { // If it's the only task in the column
+                             const firstTaskOfNextColIndex = tasks.findIndex(t => t.column !== targetColumnId && tasks.slice(0, taskIndex).every(pt => pt.column !== targetColumnId));
+                             newIndex = firstTaskOfNextColIndex !== -1 ? firstTaskOfNextColIndex : tasks.length;
+                          }
+                     }
+                }
+
+
+                // Move the task in the array
+                tasks.splice(taskIndex, 1); // Remove from old position
+                // Adjust newIndex if removing from before the target position
+                if (taskIndex < newIndex) {
+                    newIndex--;
+                }
+                tasks.splice(newIndex, 0, task); // Insert at new position
+
+
+                // --- Post-Drop Actions ---
                 if (targetColumnId === 'done' && previousColumnId !== 'done') {
-                    triggerConfetti();
+                    triggerConfetti(); // Fire confetti!
                 }
 
                 saveTasks();
-                renderTasks();
+                renderTasks(); // Re-render the entire board to reflect order and column changes
+
             } else {
                 console.error("Dropped task not found in tasks array:", taskId);
             }
+
+            draggedTaskElement = null; // Reset dragged element
         };
+
+
+        // --- Particle Animation ---
+
+        /** Particle class */
+        class Particle {
+            constructor() {
+                this.x = Math.random() * particleCanvas.width;
+                this.y = Math.random() * particleCanvas.height;
+                this.size = Math.random() * 2 + 0.5; // Smaller particles
+                this.speedX = Math.random() * 0.5 - 0.25; // Slower speed
+                this.speedY = Math.random() * 0.5 - 0.25;
+                this.color = 'rgba(156, 163, 175, 0.4)'; // gray-500 with alpha
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+
+                // Reset position if particle goes off screen
+                if (this.x < 0 || this.x > particleCanvas.width) this.speedX *= -1; // Bounce horizontally
+                if (this.y < 0 || this.y > particleCanvas.height) this.speedY *= -1; // Bounce vertically
+            }
+            draw() {
+                particleCtx.fillStyle = this.color;
+                particleCtx.beginPath();
+                particleCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                particleCtx.fill();
+            }
+        }
+
+        /** Initialize particles */
+        function initParticles() {
+            particles = []; // Clear existing
+            particleCanvas.width = window.innerWidth;
+            particleCanvas.height = window.innerHeight;
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        /** Handle particle animation */
+        function handleParticles() {
+            particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+            particles.forEach(particle => {
+                particle.update();
+                particle.draw();
+            });
+            requestAnimationFrame(handleParticles); // Loop animation
+        }
 
         // --- Event Listeners ---
 
@@ -376,17 +878,30 @@
             }
         });
 
-        // Listener for the GitHub load button
         loadGithubBtn.addEventListener('click', fetchGitHubRepos);
+        clearDoneBtn.addEventListener('click', clearDoneTasks);
 
+        // Search input listener
+        searchInput.addEventListener('input', renderTasks); // Re-render on input change
+
+        // Add drag-and-drop listeners to each column
         columns.forEach(column => {
             column.addEventListener('dragover', handleDragOver);
             column.addEventListener('dragleave', handleDragLeave);
             column.addEventListener('drop', handleDrop);
+            // Prevent default dragover on the main column div to avoid interference
+            column.closest('.kanban-column').addEventListener('dragover', e => e.preventDefault());
         });
 
+        // Resize listener for particle canvas
+        window.addEventListener('resize', initParticles);
+
         // --- Initialization ---
-        document.addEventListener('DOMContentLoaded', loadTasks);
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTasks();      // Load saved tasks
+            initParticles();  // Initialize background particles
+            handleParticles(); // Start particle animation
+        });
 
     </script>
 
